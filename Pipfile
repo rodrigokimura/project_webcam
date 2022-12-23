@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+numpy = ">=1.19.3"
+opencv-python = ">=4.4.0.46"
+pyfakewebcam = ">=0.1.0"
+mediapipe = "0.9.0.1"
+inotify-simple = ">=1.2"
+protobuf = "==3.20.2"
+
+[dev-packages]
+black = "*"
+isort = "*"
+
+[requires]
+python_version = "3.10"
