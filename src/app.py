@@ -5,7 +5,7 @@ import time
 import cv2
 import numpy as np
 from inotify_simple import INotify, flags
-from mediapipe.python.solutions import selfie_segmentation as mp_selfie_segmentation
+from mediapipe.python.solutions import selfie_segmentation as mp
 from pyfakewebcam import FakeWebcam
 
 
@@ -44,7 +44,7 @@ class VirtualWebcam:
         self.background_blur = 75
         self.sigma = 5
 
-        self.engine = mp_selfie_segmentation.SelfieSegmentation(model_selection=0)
+        self.engine = mp.SelfieSegmentation(model_selection=0)
 
         self.width, self.height = (1280, 720)
 
