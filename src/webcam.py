@@ -40,7 +40,7 @@ class Webcam:
 
 
 class VirtualWebcam:
-    def __init__(self) -> None:
+    def __init__(self, face_following: bool) -> None:
         self.virtual_webcam_path = "/dev/video2"
 
         self.background_blur = 75
@@ -71,10 +71,12 @@ class VirtualWebcam:
 
         self.mask = None
         self.face: Optional[Tuple[int, int, int, int]] = None
+        self.face_following = face_following
+
         classifier_path = os.path.join(
             os.path.dirname(__file__), "assets", "haarcascade_frontalface_default.xml"
         )
-        self.classifier = (
+        self._classifier = (
             cv2.CascadeClassifier(classifier_path)
             if os.path.exists(classifier_path)
             else None
@@ -138,10 +140,13 @@ class VirtualWebcam:
         self._compute_mask(frame)
         background_frame = self._apply_blur(frame)
         background_frame = self._apply_sepia(background_frame)
-        if self.classifier:
-            self._detect_face(frame)
+        if self.face_following:
+            if self._classifier:
+                self._detect_face(frame)
         cv2.blendLinear(frame, background_frame, self.mask, 1 - self.mask, dst=frame)
-        frame = self._crop_face(frame)
+        if self.face_following:
+            if self.face:
+                frame = self._crop_face(frame)
         return frame
 
     def _compute_mask(self, frame: NDArray[np.uint8]) -> None:
@@ -167,7 +172,7 @@ class VirtualWebcam:
             return
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.classifier.detectMultiScale(gray, 1.1, 6)
+        faces = self._classifier.detectMultiScale(gray, 1.1, 6)
         if len(faces) == 0:
             return
         if len(faces) == 1:
