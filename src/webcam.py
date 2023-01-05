@@ -1,6 +1,5 @@
-import signal
-import sys
 import time
+from threading import Event
 
 import cv2
 import numpy as np
@@ -58,6 +57,7 @@ class VirtualWebcam:
         )
         self.running = False
         self.consumers = 0
+        self.stop_event = Event()
 
     def _send_to_virtual_webcam(self, frame):
         self.virtual_webcam.schedule_frame(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -66,7 +66,7 @@ class VirtualWebcam:
 
         self._start_monitoring_webcam()
 
-        while True:
+        while not self.stop_event.is_set():
             self._check_if_webcam_is_open()
 
             if self.running:
@@ -78,6 +78,9 @@ class VirtualWebcam:
                 time.sleep(1)
 
             self._send_to_virtual_webcam(frame)
+
+    def stop(self):
+        self.stop_event.set()
 
     def _start_monitoring_webcam(self):
         self.monitor = INotify(nonblocking=True)
@@ -111,8 +114,9 @@ class VirtualWebcam:
         # Blur background
         background_frame = cv2.GaussianBlur(
             frame,
-            (self.background_blur, self.background_blur),
-            self.sigma,
+            ksize=(self.background_blur, self.background_blur),
+            sigmaX=0,
+            sigmaY=0,
             borderType=cv2.BORDER_DEFAULT,
         )
 
@@ -120,20 +124,17 @@ class VirtualWebcam:
 
         return frame
 
+    def set_blur(self, blur: int):
+        if blur < 0:
+            blur = 0
+        is_even = blur % 2 == 0
+        if is_even:
+            blur += 1
+        self.background_blur = blur
+
     def toggle(self):
         self.running = not self.running
         if self.running:
             print("Running...")
         else:
             print("Stopped...")
-
-
-def main():
-    cam = VirtualWebcam()
-    signal.signal(signal.SIGINT, lambda *args, **kwargs: cam.toggle())
-    signal.signal(signal.SIGQUIT, lambda *args, **kwargs: sys.exit(0))
-    cam.start()
-
-
-if __name__ == "__main__":
-    main()

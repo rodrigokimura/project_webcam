@@ -2,7 +2,7 @@ export PYTHONPATH := 'scr'
 export PIPENV_VERBOSITY := -1
 
 run:
-	@pipenv run python src/app.py
+	@pipenv run python src/apps.py
 
 lint:
 	@pipenv run black .
