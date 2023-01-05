@@ -26,23 +26,34 @@ class GUIApp(BaseApp):
         self.cam = VirtualWebcam()
         self.start()
         self.root = Tk()
+        self.root.title("Webcam")
+        self.root.geometry("300x300")
         ttk.Style(self.root).theme_use("clam")
+        self.render_windows()
         self.root.mainloop()
 
     def render_windows(self):
         frm = ttk.Frame(self.root, padding=10)
         frm.pack()
+
         ttk.Button(
             frm,
             text="Toggle",
             command=lambda: self.cam.toggle(),
-        ).grid(column=0, row=1)
+        ).pack(padx=10, pady=10)
+
         ttk.Button(
             frm,
             text="Exit",
             command=lambda: self.exit(),
-        ).grid(column=0, row=2)
+        ).pack(padx=10, pady=10)
 
+        self.render_blur_control().pack(padx=10, pady=10)
+        self.render_sepia_control().pack(padx=10, pady=10)
+
+    def render_blur_control(self):
+        frm = ttk.Frame(self.root, padding=10)
+        ttk.Label(frm, text="Blur").pack()
         ttk.Scale(
             frm,
             from_=0,
@@ -50,10 +61,27 @@ class GUIApp(BaseApp):
             orient=HORIZONTAL,
             command=self.set_blur,
             value=self.cam.background_blur,
-        ).grid(column=0, row=3)
+        ).pack(expand=True, fill="both")
+        return frm
+
+    def render_sepia_control(self):
+        frm = ttk.Frame(self.root, padding=10)
+        ttk.Label(frm, text="Sepia").pack()
+        ttk.Scale(
+            frm,
+            from_=0,
+            to=1,
+            orient=HORIZONTAL,
+            command=self.set_sepia,
+            value=self.cam.sepia_intensity,
+        ).pack(expand=True, fill="both")
+        return frm
 
     def set_blur(self, value):
         self.cam.set_blur(int(float(value)))
+
+    def set_sepia(self, value):
+        self.cam.sepia_intensity = float(value)
 
     def start(self):
         self.main_thread = Thread(target=lambda: self.cam.start(), name="start_webcam")

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from inotify_simple import INotify, flags
 from mediapipe.python.solutions import selfie_segmentation as mp
+from numpy._typing import NDArray
 from pyfakewebcam import FakeWebcam
 
 
@@ -59,6 +60,8 @@ class VirtualWebcam:
         self.consumers = 0
         self.stop_event = Event()
 
+        self.sepia_intensity = 0.5
+
     def _send_to_virtual_webcam(self, frame):
         self.virtual_webcam.schedule_frame(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
@@ -101,7 +104,7 @@ class VirtualWebcam:
                 print("Detected webcam open")
                 break
 
-    def _render_image(self, frame: np.ndarray):
+    def _render_image(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         cv2.resize(frame, (self.width, self.height))
 
         mask = self.engine.process(frame).segmentation_mask
@@ -111,8 +114,13 @@ class VirtualWebcam:
         cv2.blur(mask, (10, 10), dst=mask)
         cv2.accumulateWeighted(mask, self.old_mask or mask, 0.5)
 
-        # Blur background
-        background_frame = cv2.GaussianBlur(
+        background_frame = self._apply_blur(frame)
+        background_frame = self._apply_sepia(background_frame)
+        cv2.blendLinear(frame, background_frame, mask, 1 - mask, dst=frame)
+        return frame
+
+    def _apply_blur(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
+        return cv2.GaussianBlur(
             frame,
             ksize=(self.background_blur, self.background_blur),
             sigmaX=0,
@@ -120,9 +128,22 @@ class VirtualWebcam:
             borderType=cv2.BORDER_DEFAULT,
         )
 
-        cv2.blendLinear(frame, background_frame, mask, 1 - mask, dst=frame)
-
-        return frame
+    def _apply_sepia(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
+        intensity = self.sepia_intensity
+        if intensity <= 0:
+            return frame
+        if intensity > 1:
+            intensity = 1
+        normalized_gray = (
+            np.array(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), np.float32) / 255
+        )
+        sepia = np.ones(frame.shape)
+        r, g, b = 255, 204, 153
+        sepia[:, :, 2] = r * normalized_gray
+        sepia[:, :, 1] = g * normalized_gray
+        sepia[:, :, 0] = b * normalized_gray
+        sepia = np.array(sepia, np.uint8)
+        return cv2.addWeighted(frame, 1 - intensity, sepia, intensity, 0)
 
     def set_blur(self, blur: int):
         if blur < 0:
