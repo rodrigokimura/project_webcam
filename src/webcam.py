@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import os
 import time
 from threading import Event
-from typing import Optional, Tuple
+from typing import NamedTuple
 
 import cv2
 import numpy as np
@@ -40,7 +42,7 @@ class Webcam:
 
 
 class VirtualWebcam:
-    def __init__(self, face_following: bool) -> None:
+    def __init__(self, face_tracking: bool) -> None:
         self.virtual_webcam_path = "/dev/video2"
 
         self.background_blur = 75
@@ -70,11 +72,11 @@ class VirtualWebcam:
         self.face_frame_limit = 30
 
         self.mask = None
-        self.face: Optional[Tuple[int, int, int, int]] = None
-        self.face_following = face_following
+        self.face_tracking = face_tracking
+        self.face_tracking_threshold = 0.1
 
-        self.current_face_rectangle = (0, 0, self.width, self.height)
-        self.target_face_rectangle = (0, 0, self.width, self.height)
+        self.current_face: Rectangle = Rectangle(self.width // 6, self.height // 6, (self.width // 3) * 2,( self.height // 3) * 2)
+        self.next_face: Rectangle = Rectangle(0, 0, self.width, self.height)
 
         classifier_path = os.path.join(
             os.path.dirname(__file__), "assets", "haarcascade_frontalface_default.xml"
@@ -143,12 +145,12 @@ class VirtualWebcam:
         self._compute_mask(frame)
         background_frame = self._apply_blur(frame)
         background_frame = self._apply_sepia(background_frame)
-        if self.face_following:
+        if self.face_tracking:
             if self._classifier:
                 self._detect_face(frame)
         cv2.blendLinear(frame, background_frame, self.mask, 1 - self.mask, dst=frame)
-        if self.face_following:
-            if self.face:
+        if self.face_tracking:
+            if self.current_face:
                 frame = self._crop_face(frame)
         return frame
 
@@ -168,7 +170,7 @@ class VirtualWebcam:
 
     def _detect_face(self, frame: NDArray[np.uint8]) -> None:
 
-        if self._frame_counter_for_face != 0 and self.face is not None:
+        if self._frame_counter_for_face != 0 and self.current_face is not None:
             return
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -176,46 +178,56 @@ class VirtualWebcam:
         if len(faces) == 0:
             return
         if len(faces) == 1:
-            self.face = faces[0]
-        max_area = max(w * h for (x, y, w, h) in faces)
-        face = next((x, y, w, h) for (x, y, w, h) in faces if w * h == max_area)
-        self.face = face
+            face = Rectangle(*faces[0])
+        else:
+            max_area = max(w * h for (x, y, w, h) in faces)
+            face = Rectangle(
+                *next((x, y, w, h) for (x, y, w, h) in faces if w * h == max_area)
+            )
+
+        is_too_small = face.h < self.current_face.h * 0.2
+        if is_too_small:
+            # Propably a false positive
+            return
+
+        d = face.center - self.current_face.center
+        is_too_far = d > self.current_face.h * self.face_tracking_threshold
+        if is_too_far or is_too_small:
+            self.current_face = self._enlarge_face_rect(face)
+
+    def _enlarge_face_rect(self, rect: Rectangle) -> Rectangle:
+        h = int(2 * rect.h)
+        w = int(h * (self.width / self.height))
+        x = int(rect.x - (w - rect.w) / 2)
+        y = int(rect.y - (h - rect.h) / 2)
+        return Rectangle(x, y, w, h)
 
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        if self.face is not None:
-            x, y, w, h = self.face
+        if self.current_face is None:
+            return
+        rect_to_crop = self.current_face
 
-            n_h = int(2 * h)
-            n_w = int(n_h * (self.width / self.height))
-            n_x = int(x - (n_w - w) / 2)
-            n_y = int(y - (n_h - h) / 2)
-
-            rect_to_crop = (n_x, n_y, n_w, n_h)
-
-            if self._frame_counter_for_face == self.face_frame_limit - 1:
-                self.target_face_rectangle = rect_to_crop
-                rect_to_crop = self.current_face_rectangle
-            else:
-                self.current_face_rectangle = rect_to_crop
-                rect_to_crop = tuple(
+        if self._frame_counter_for_face == self.face_frame_limit - 1:
+            self.next_face = rect_to_crop
+        else:
+            rect_to_crop = Rectangle(
+                *(
                     int(
                         (self._frame_counter_for_face / self.face_frame_limit) * (c - t)
                         + t
                     )
-                    for c, t in zip(
-                        self.current_face_rectangle, self.target_face_rectangle
-                    )
+                    for c, t in zip(self.current_face, self.next_face)
                 )
+            )
 
-            return self._crop_and_resize(frame, rect_to_crop)
+        return self._crop_and_resize(frame, rect_to_crop)
 
     def _crop_and_resize(
-        self, frame: NDArray[np.uint8], rect: Tuple[int, int, int, int]
+        self, frame: NDArray[np.uint8], rect: Rectangle
     ) -> NDArray[np.uint8]:
-        x, y, w, h = rect
-        if h == 0 or w == 0:
+        if rect.h == 0 or rect.w == 0:
             return frame
-        frame = frame[y : y + h, x : x + w]
+        frame = frame[rect.y : rect.y + rect.h, rect.x : rect.x + rect.w]
         return cv2.resize(frame, (self.width, self.height))
 
     def _apply_blur(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
@@ -258,3 +270,30 @@ class VirtualWebcam:
             print("Running...")
         else:
             print("Stopped...")
+
+
+class Point(NamedTuple):
+    x: int
+    y: int
+
+    def __sub__(self, other: Point) -> int:
+        import math
+
+        return abs(
+            int(
+                math.sqrt(
+                    math.pow((self.x - other.x), 2) + math.pow((self.y - other.y), 2)
+                )
+            )
+        )
+
+
+class Rectangle(NamedTuple):
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def center(self) -> Point:
+        return Point(self.x + self.w // 2, self.y + self.h // 2)

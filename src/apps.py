@@ -23,11 +23,11 @@ class CLIApp(BaseApp):
 
 class GUIApp(BaseApp):
     def run(self):
-        self.cam = VirtualWebcam(face_following=False)
+        self.cam = VirtualWebcam(face_tracking=False)
         self.start()
         self.root = Tk()
         self.root.title("Webcam")
-        self.root.geometry("300x400")
+        self.root.geometry("300x500")
         ttk.Style(self.root).theme_use("clam")
         self.face_following = False
         self.render_windows()
@@ -52,6 +52,7 @@ class GUIApp(BaseApp):
         self.render_blur_control().pack(padx=10, pady=10)
         self.render_sepia_control().pack(padx=10, pady=10)
         self.render_face_following_control().pack(padx=10, pady=10)
+        self.render_face_tracking_threshold_control().pack(padx=10, pady=10)
 
     def render_blur_control(self):
         frm = ttk.Frame(self.root, padding=10)
@@ -79,26 +80,44 @@ class GUIApp(BaseApp):
         ).pack(expand=True, fill="both")
         return frm
 
+
+
     def render_face_following_control(self):
         frm = ttk.Frame(self.root, padding=10)
         ttk.Checkbutton(
             frm,
-            text="Face Following",
+            text="Face Tracking",
             onvalue=True,
             offvalue=False,
             command=self.toggle_face_following,
         ).pack(expand=True, fill="both")
         return frm
 
+    def render_face_tracking_threshold_control(self):
+        frm = ttk.Frame(self.root, padding=10)
+        ttk.Label(frm, text="Threshold").pack()
+        ttk.Scale(
+            frm,
+            from_=0,
+            to=1,
+            orient=HORIZONTAL,
+            command=self.set_face_tracking_threshold,
+            value=self.cam.face_tracking_threshold,
+        ).pack(expand=True, fill="both")
+        return frm
+
     def toggle_face_following(self):
         self.face_following = not self.face_following
-        self.cam.face_following = self.face_following
+        self.cam.face_tracking = self.face_following
 
     def set_blur(self, value):
         self.cam.set_blur(int(float(value)))
 
     def set_sepia(self, value):
         self.cam.sepia_intensity = float(value)
+
+    def set_face_tracking_threshold(self, value):
+        self.cam.face_tracking_threshold = float(value)
 
     def start(self):
         self.main_thread = Thread(target=lambda: self.cam.start(), name="start_webcam")
