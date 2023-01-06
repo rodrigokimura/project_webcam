@@ -73,6 +73,9 @@ class VirtualWebcam:
         self.face: Optional[Tuple[int, int, int, int]] = None
         self.face_following = face_following
 
+        self.current_face_rectangle = (0, 0, self.width, self.height)
+        self.target_face_rectangle = (0, 0, self.width, self.height)
+
         classifier_path = os.path.join(
             os.path.dirname(__file__), "assets", "haarcascade_frontalface_default.xml"
         )
@@ -102,8 +105,8 @@ class VirtualWebcam:
                     self._frame_counter_for_mask = 0
                 else:
                     self._frame_counter_for_mask += 1
-                if self._frame_counter_for_face > self.face_frame_limit:
-                    self._frame_counter_for_face = 0
+                if self._frame_counter_for_face >= self.face_frame_limit:
+                    self._frame_counter_for_face = 1
                 else:
                     self._frame_counter_for_face += 1
             else:
@@ -183,13 +186,38 @@ class VirtualWebcam:
 
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if self.face is not None:
+            i = self._frame_counter_for_face  # 1 - 30
             x, y, w, h = self.face
             n_h = int(2 * h)
             n_w = int(n_h * (self.width / self.height))
             n_x = int(x - (n_w - w) / 2)
             n_y = int(y - (n_h - h) / 2)
-            frame = frame[n_y : n_y + n_h, n_x : n_x + n_w]
-            return cv2.resize(frame, (self.width, self.height))
+
+            rect_to_crop = (n_x, n_y, n_w, n_h)
+
+            if i == self.face_frame_limit - 1:
+                self.target_face_rectangle = rect_to_crop
+                rect_to_crop = self.current_face_rectangle
+            else:
+                _i = i
+                self.current_face_rectangle = rect_to_crop
+                rect_to_crop = tuple(
+                    int((_i / self.face_frame_limit) * (c - t) + t)
+                    for c, t in zip(
+                        self.current_face_rectangle, self.target_face_rectangle
+                    )
+                )
+
+            return self._crop_and_resize(frame, rect_to_crop)
+
+    def _crop_and_resize(
+        self, frame: NDArray[np.uint8], rect: Tuple[int, int, int, int]
+    ) -> NDArray[np.uint8]:
+        x, y, w, h = rect
+        if h == 0 or w == 0:
+            return frame
+        frame = frame[y : y + h, x : x + w]
+        return cv2.resize(frame, (self.width, self.height))
 
     def _apply_blur(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         return cv2.GaussianBlur(
