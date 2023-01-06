@@ -100,15 +100,15 @@ class VirtualWebcam:
 
             if self.running:
                 frame = self.webcam.read()
-                frame = self._render_image(frame)
                 if self._frame_counter_for_mask > self.mask_frame_limit:
                     self._frame_counter_for_mask = 0
                 else:
                     self._frame_counter_for_mask += 1
-                if self._frame_counter_for_face >= self.face_frame_limit:
-                    self._frame_counter_for_face = 1
+                if self._frame_counter_for_face >= self.face_frame_limit - 1:
+                    self._frame_counter_for_face = 0
                 else:
                     self._frame_counter_for_face += 1
+                frame = self._render_image(frame)
             else:
                 frame = self.blank_frame
                 self.webcam.close()
@@ -168,10 +168,7 @@ class VirtualWebcam:
 
     def _detect_face(self, frame: NDArray[np.uint8]) -> None:
 
-        if (
-            self._frame_counter_for_face != self.face_frame_limit
-            and self.face is not None
-        ):
+        if self._frame_counter_for_face != 0 and self.face is not None:
             return
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -186,8 +183,8 @@ class VirtualWebcam:
 
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if self.face is not None:
-            i = self._frame_counter_for_face  # 1 - 30
             x, y, w, h = self.face
+
             n_h = int(2 * h)
             n_w = int(n_h * (self.width / self.height))
             n_x = int(x - (n_w - w) / 2)
@@ -195,14 +192,16 @@ class VirtualWebcam:
 
             rect_to_crop = (n_x, n_y, n_w, n_h)
 
-            if i == self.face_frame_limit - 1:
+            if self._frame_counter_for_face == self.face_frame_limit - 1:
                 self.target_face_rectangle = rect_to_crop
                 rect_to_crop = self.current_face_rectangle
             else:
-                _i = i
                 self.current_face_rectangle = rect_to_crop
                 rect_to_crop = tuple(
-                    int((_i / self.face_frame_limit) * (c - t) + t)
+                    int(
+                        (self._frame_counter_for_face / self.face_frame_limit) * (c - t)
+                        + t
+                    )
                     for c, t in zip(
                         self.current_face_rectangle, self.target_face_rectangle
                     )
