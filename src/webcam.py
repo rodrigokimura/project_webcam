@@ -184,7 +184,6 @@ class VirtualWebcam:
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if self.face is not None:
             x, y, w, h = self.face
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 1)
             n_h = int(2 * h)
             n_w = int(n_h * (self.width / self.height))
             n_x = int(x - (n_w - w) / 2)
