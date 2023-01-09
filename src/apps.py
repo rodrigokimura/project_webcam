@@ -2,7 +2,7 @@ import signal
 import sys
 from abc import ABC, abstractmethod
 from threading import Thread
-from tkinter import HORIZONTAL, Tk, ttk
+from tkinter import HORIZONTAL, Image, Tk, ttk
 
 from webcam import VirtualWebcam
 
@@ -28,31 +28,39 @@ class GUIApp(BaseApp):
         self.root = Tk()
         self.root.title("Webcam")
         self.root.geometry("300x500")
-        ttk.Style(self.root).theme_use("clam")
-        self.face_following = False
+        self.root.configure(background="#dcdad5")
+        self.face_tracking = False
+        self._set_icon()
         self.render_windows()
+        ttk.Style(self.root).theme_use("clam")
         self.root.mainloop()
 
     def render_windows(self):
-        frm = ttk.Frame(self.root, padding=10)
+
+        frm = ttk.Frame(self.root)
         frm.pack()
 
-        ttk.Button(
+        self.render_buttons().pack(fill="both", expand=True)
+        self.render_blur_control().pack(fill="x", expand=True)
+        self.render_sepia_control().pack(fill="x", expand=True)
+        self.render_face_following_control().pack(fill="both", expand=True)
+        self.render_face_tracking_threshold_control().pack(fill="x", expand=True)
+
+    def render_buttons(self):
+        frm = ttk.Frame(self.root, padding=10)
+        toggle_button = ttk.Button(
             frm,
             text="Toggle",
             command=lambda: self.cam.toggle(),
-        ).pack(padx=10, pady=10)
-
-        ttk.Button(
+        )
+        exit_button = ttk.Button(
             frm,
             text="Exit",
             command=lambda: self.exit(),
-        ).pack(padx=10, pady=10)
-
-        self.render_blur_control().pack(padx=10, pady=10)
-        self.render_sepia_control().pack(padx=10, pady=10)
-        self.render_face_following_control().pack(padx=10, pady=10)
-        self.render_face_tracking_threshold_control().pack(padx=10, pady=10)
+        )
+        toggle_button.pack(padx=10, pady=10, fill="both", expand=True)
+        exit_button.pack(padx=10, pady=10, fill="both", expand=True)
+        return frm
 
     def render_blur_control(self):
         frm = ttk.Frame(self.root, padding=10)
@@ -80,8 +88,6 @@ class GUIApp(BaseApp):
         ).pack(expand=True, fill="both")
         return frm
 
-
-
     def render_face_following_control(self):
         frm = ttk.Frame(self.root, padding=10)
         ttk.Checkbutton(
@@ -107,8 +113,8 @@ class GUIApp(BaseApp):
         return frm
 
     def toggle_face_following(self):
-        self.face_following = not self.face_following
-        self.cam.face_tracking = self.face_following
+        self.face_tracking = not self.face_tracking
+        self.cam.face_tracking = self.face_tracking
 
     def set_blur(self, value):
         self.cam.set_blur(int(float(value)))
@@ -128,6 +134,10 @@ class GUIApp(BaseApp):
         self.main_thread.join()
         self.root.destroy()
         sys.exit(0)
+
+    def _set_icon(self):
+        img = Image("photo", file="src/assets/icon.png")
+        self.root.tk.call("wm", "iconphoto", self.root._w, img)
 
 
 if __name__ == "__main__":

@@ -75,7 +75,12 @@ class VirtualWebcam:
         self.face_tracking = face_tracking
         self.face_tracking_threshold = 0.1
 
-        self.current_face: Rectangle = Rectangle(self.width // 6, self.height // 6, (self.width // 3) * 2,( self.height // 3) * 2)
+        self.current_face: Rectangle = Rectangle(
+            self.width // 6,
+            self.height // 6,
+            (self.width // 3) * 2,
+            (self.height // 3) * 2,
+        )
         self.next_face: Rectangle = Rectangle(0, 0, self.width, self.height)
 
         classifier_path = os.path.join(
