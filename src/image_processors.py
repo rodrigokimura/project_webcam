@@ -23,7 +23,7 @@ class Blur(ImageProcessor):
             blur += 1
         self.blur = blur
 
-    def process(self, frame):
+    def process(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         return cv2.GaussianBlur(
             frame,
             ksize=(self.blur, self.blur),
@@ -66,10 +66,9 @@ class Blend(ImageProcessor):
         self.background_frame = background_frame
 
     def process(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        cv2.blendLinear(
-            frame, self.background_frame, self.mask, 1 - self.mask, dst=frame
+        return cv2.blendLinear(
+            frame, self.background_frame, self.mask, 1 - self.mask
         )
-        return frame
 
 
 class Resize(ImageProcessor):
@@ -79,7 +78,7 @@ class Resize(ImageProcessor):
     def process(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         return cv2.resize(
             frame,
-            (self.resolution.width, self.resolution.height),
+            self.resolution,
             interpolation=cv2.INTER_AREA,
         )
 

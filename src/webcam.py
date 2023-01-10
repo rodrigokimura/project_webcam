@@ -67,6 +67,7 @@ class VirtualWebcam:
         self._frame_counter_for_face = LoopCounter(30)
 
         self.mask = None
+        self.mask_engine = SelfieSegmentation()
         self.face_tracking = face_tracking
         self.face_tracking_threshold = 0.1
 
@@ -151,7 +152,7 @@ class VirtualWebcam:
 
     def _compute_mask(self, frame: NDArray[np.uint8]) -> None:
         if self._frame_counter_for_mask.limit_reached or self.mask is None:
-            self.mask = SelfieSegmentation().process(frame)
+            self.mask = self.mask_engine.process(frame)
 
     def _detect_face(self, frame: NDArray[np.uint8]) -> None:
         if (
