@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from webcam import Rectangle, Resolution
+from models import Rectangle, Resolution
 
 
 class FramingStrategy(ABC):

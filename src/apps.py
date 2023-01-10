@@ -73,7 +73,7 @@ class GUIApp(BaseApp):
             to=100,
             orient=HORIZONTAL,
             command=self.set_blur,
-            value=self.cam.background_blur,
+            value=self.cam.blur,
         ).pack(expand=True, fill="both")
         return frm
 
@@ -86,7 +86,7 @@ class GUIApp(BaseApp):
             to=1,
             orient=HORIZONTAL,
             command=self.set_sepia,
-            value=self.cam.sepia_intensity,
+            value=self.cam.sepia,
         ).pack(expand=True, fill="both")
         return frm
 
@@ -134,10 +134,10 @@ class GUIApp(BaseApp):
         self.cam.show_guides = self.show_guides
 
     def set_blur(self, value):
-        self.cam.set_blur(int(float(value)))
+        self.cam.blur = int(float(value))
 
     def set_sepia(self, value):
-        self.cam.sepia_intensity = float(value)
+        self.cam.sepia = float(value)
 
     def set_face_tracking_threshold(self, value):
         self.cam.face_tracking_threshold = float(value)

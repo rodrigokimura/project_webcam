@@ -1,16 +1,17 @@
-from __future__ import annotations
-
 import os
 import time
 from threading import Event
-from typing import NamedTuple
 
 import cv2
 import numpy as np
 from inotify_simple import INotify, flags
-from mediapipe.python.solutions import selfie_segmentation as mp
 from numpy._typing import NDArray
 from pyfakewebcam import FakeWebcam
+
+from frame import OneThird
+from image_processors import Blend, Blur, Resize, SelfieSegmentation, Sepia
+from models import Rectangle, Resolution
+from utils import LoopCounter
 
 
 class Webcam:
@@ -43,37 +44,27 @@ class Webcam:
 
 class VirtualWebcam:
     def __init__(self, face_tracking: bool) -> None:
-        self.virtual_webcam_path = "/dev/video2"
-
-        self.background_blur = 75
-        self.sigma = 5
-
-        self.engine = mp.SelfieSegmentation(model_selection=0)
-
         self.resolution = Resolution(1280, 720)
-
+        self.webcam = Webcam(
+            "/dev/video0", self.resolution.width, self.resolution.height
+        )
+        self.virtual_webcam_path = "/dev/video2"
+        self.virtual_webcam = FakeWebcam(
+            self.virtual_webcam_path, self.resolution.width, self.resolution.height
+        )
         self.blank_frame = np.zeros(
             (self.resolution.height, self.resolution.width), np.uint8
         )
         self.blank_frame.flags.writeable = False
 
-        self.old_mask = None
-        self.webcam = Webcam(
-            "/dev/video0", self.resolution.width, self.resolution.height
-        )
-        self.virtual_webcam = FakeWebcam(
-            self.virtual_webcam_path, self.resolution.width, self.resolution.height
-        )
+        self.blur = 75
+        self.sepia = 0.5
+
         self.running = False
         self.stop_event = Event()
 
-        self.sepia_intensity = 0.5
-
-        self._frame_counter_for_mask = 0
-        self._frame_counter_for_face = 0
-
-        self.mask_frame_limit = 10
-        self.face_frame_limit = 30
+        self._frame_counter_for_mask = LoopCounter(10)
+        self._frame_counter_for_face = LoopCounter(30)
 
         self.mask = None
         self.face_tracking = face_tracking
@@ -114,14 +105,8 @@ class VirtualWebcam:
 
             if self.running:
                 frame = self.webcam.read()
-                if self._frame_counter_for_mask > self.mask_frame_limit:
-                    self._frame_counter_for_mask = 0
-                else:
-                    self._frame_counter_for_mask += 1
-                if self._frame_counter_for_face >= self.face_frame_limit - 1:
-                    self._frame_counter_for_face = 0
-                else:
-                    self._frame_counter_for_face += 1
+                self._frame_counter_for_mask.increment()
+                self._frame_counter_for_face.increment()
                 frame = self._render_image(frame)
             else:
                 frame = self.blank_frame
@@ -153,36 +138,27 @@ class VirtualWebcam:
                 break
 
     def _render_image(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        cv2.resize(frame, self.resolution)
+        frame = Resize(self.resolution).process(frame)
         if self.face_tracking and self._classifier:
             self._detect_face(frame)
         if self.face_tracking and self.current_face:
             frame = self._crop_face(frame)
         self._compute_mask(frame)
-        background_frame = self._apply_blur(frame)
-        background_frame = self._apply_sepia(background_frame)
-        cv2.blendLinear(frame, background_frame, self.mask, 1 - self.mask, dst=frame)
+        background_frame = Blur(self.blur).process(frame)
+        background_frame = Sepia(self.sepia).process(background_frame)
+        frame = Blend(self.mask, background_frame).process(frame)
         return frame
 
     def _compute_mask(self, frame: NDArray[np.uint8]) -> None:
-
-        if (
-            self._frame_counter_for_mask != self.mask_frame_limit
-            and self.mask is not None
-        ):
-            return
-
-        self.mask = self.engine.process(frame).segmentation_mask
-        cv2.threshold(self.mask, 0.9, 1, cv2.THRESH_BINARY, dst=self.mask)
-        cv2.dilate(self.mask, np.ones((5, 5), np.uint8), iterations=1, dst=self.mask)
-        cv2.blur(self.mask, (10, 10), dst=self.mask)
-        cv2.accumulateWeighted(self.mask, self.old_mask or self.mask, 0.5)
+        if self._frame_counter_for_mask.limit_reached or self.mask is None:
+            self.mask = SelfieSegmentation().process(frame)
 
     def _detect_face(self, frame: NDArray[np.uint8]) -> None:
-
-        if self._frame_counter_for_face != 0 and self.current_face is not None:
+        if (
+            not self._frame_counter_for_face.initial_value
+            and self.current_face is not None
+        ):
             return
-
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self._classifier.detectMultiScale(gray, 1.1, 6)
         if len(faces) == 0:
@@ -206,7 +182,7 @@ class VirtualWebcam:
         d = face.center - self.current_face.center
         is_too_far = d > self.current_face.h * self.face_tracking_threshold
         if is_too_far or is_too_small:
-            self.current_face = self._enlarge_face_rect(face)
+            self.current_face = OneThird(face, self.resolution).frame()
 
     def _draw_guides(self, frame: NDArray[np.uint8], face: Rectangle):
         crosshair_size = 10
@@ -244,23 +220,22 @@ class VirtualWebcam:
             2,
         )
 
-    def _enlarge_face_rect(self, rect: Rectangle) -> Rectangle:
-        from frame import OneThird
-
-        return OneThird(rect, self.resolution).frame()
-
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if self.current_face is None:
             return
         rect_to_crop = self.current_face
 
-        if self._frame_counter_for_face == self.face_frame_limit - 1:
+        if self._frame_counter_for_face.limit_reached:
             self.next_face = rect_to_crop
         else:
             rect_to_crop = Rectangle(
                 *(
                     int(
-                        (self._frame_counter_for_face / self.face_frame_limit) * (c - t)
+                        (
+                            self._frame_counter_for_face.value
+                            / self._frame_counter_for_face.limit
+                        )
+                        * (c - t)
                         + t
                     )
                     for c, t in zip(self.current_face, self.next_face)
@@ -275,43 +250,9 @@ class VirtualWebcam:
             return frame
         try:
             frame = frame[rect.y : rect.y + rect.h, rect.x : rect.x + rect.w]
-            return cv2.resize(frame, self.resolution)
+            return Resize(self.resolution).process(frame)
         except Exception:
             return frame
-
-    def _apply_blur(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        return cv2.GaussianBlur(
-            frame,
-            ksize=(self.background_blur, self.background_blur),
-            sigmaX=0,
-            sigmaY=0,
-            borderType=cv2.BORDER_DEFAULT,
-        )
-
-    def _apply_sepia(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        intensity = self.sepia_intensity
-        if intensity <= 0:
-            return frame
-        if intensity > 1:
-            intensity = 1
-        normalized_gray = (
-            np.array(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), np.float32) / 255
-        )
-        sepia = np.ones(frame.shape)
-        r, g, b = 255, 204, 153
-        sepia[:, :, 2] = r * normalized_gray
-        sepia[:, :, 1] = g * normalized_gray
-        sepia[:, :, 0] = b * normalized_gray
-        sepia = np.array(sepia, np.uint8)
-        return cv2.addWeighted(frame, 1 - intensity, sepia, intensity, 0)
-
-    def set_blur(self, blur: int):
-        if blur < 0:
-            blur = 0
-        is_even = blur % 2 == 0
-        if is_even:
-            blur += 1
-        self.background_blur = blur
 
     def toggle(self):
         self.running = not self.running
@@ -319,35 +260,3 @@ class VirtualWebcam:
             print("Running...")
         else:
             print("Stopped...")
-
-
-class Point(NamedTuple):
-    x: int
-    y: int
-
-    def __sub__(self, other: Point) -> int:
-        import math
-
-        return abs(
-            int(
-                math.sqrt(
-                    math.pow((self.x - other.x), 2) + math.pow((self.y - other.y), 2)
-                )
-            )
-        )
-
-
-class Rectangle(NamedTuple):
-    x: int
-    y: int
-    w: int
-    h: int
-
-    @property
-    def center(self) -> Point:
-        return Point(self.x + self.w // 2, self.y + self.h // 2)
-
-
-class Resolution(NamedTuple):
-    width: int
-    height: int
