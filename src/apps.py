@@ -30,6 +30,7 @@ class GUIApp(BaseApp):
         self.root.geometry("300x500")
         self.root.configure(background="#dcdad5")
         self.face_tracking = False
+        self.show_guides = False
         self._set_icon()
         self.render_windows()
         ttk.Style(self.root).theme_use("clam")
@@ -45,6 +46,7 @@ class GUIApp(BaseApp):
         self.render_sepia_control().pack(fill="x", expand=True)
         self.render_face_following_control().pack(fill="both", expand=True)
         self.render_face_tracking_threshold_control().pack(fill="x", expand=True)
+        self.render_show_guides_control().pack(fill="both", expand=True)
 
     def render_buttons(self):
         frm = ttk.Frame(self.root, padding=10)
@@ -99,6 +101,17 @@ class GUIApp(BaseApp):
         ).pack(expand=True, fill="both")
         return frm
 
+    def render_show_guides_control(self):
+        frm = ttk.Frame(self.root, padding=10)
+        ttk.Checkbutton(
+            frm,
+            text="Show guides",
+            onvalue=True,
+            offvalue=False,
+            command=self.toggle_show_guides,
+        ).pack(expand=True, fill="both")
+        return frm
+
     def render_face_tracking_threshold_control(self):
         frm = ttk.Frame(self.root, padding=10)
         ttk.Label(frm, text="Threshold").pack()
@@ -115,6 +128,10 @@ class GUIApp(BaseApp):
     def toggle_face_following(self):
         self.face_tracking = not self.face_tracking
         self.cam.face_tracking = self.face_tracking
+
+    def toggle_show_guides(self):
+        self.show_guides = not self.show_guides
+        self.cam.show_guides = self.show_guides
 
     def set_blur(self, value):
         self.cam.set_blur(int(float(value)))

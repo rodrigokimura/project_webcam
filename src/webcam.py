@@ -50,15 +50,19 @@ class VirtualWebcam:
 
         self.engine = mp.SelfieSegmentation(model_selection=0)
 
-        self.width, self.height = (1280, 720)
+        self.resolution = Resolution(1280, 720)
 
-        self.blank_frame = np.zeros((self.height, self.width), np.uint8)
+        self.blank_frame = np.zeros(
+            (self.resolution.height, self.resolution.width), np.uint8
+        )
         self.blank_frame.flags.writeable = False
 
         self.old_mask = None
-        self.webcam = Webcam("/dev/video0", self.width, self.height)
+        self.webcam = Webcam(
+            "/dev/video0", self.resolution.width, self.resolution.height
+        )
         self.virtual_webcam = FakeWebcam(
-            self.virtual_webcam_path, self.width, self.height
+            self.virtual_webcam_path, self.resolution.width, self.resolution.height
         )
         self.running = False
         self.stop_event = Event()
@@ -76,12 +80,14 @@ class VirtualWebcam:
         self.face_tracking_threshold = 0.1
 
         self.current_face: Rectangle = Rectangle(
-            self.width // 6,
-            self.height // 6,
-            (self.width // 3) * 2,
-            (self.height // 3) * 2,
+            self.resolution.width // 6,
+            self.resolution.height // 6,
+            (self.resolution.width // 3) * 2,
+            (self.resolution.height // 3) * 2,
         )
-        self.next_face: Rectangle = Rectangle(0, 0, self.width, self.height)
+        self.next_face: Rectangle = Rectangle(
+            0, 0, self.resolution.width, self.resolution.height
+        )
 
         classifier_path = os.path.join(
             os.path.dirname(__file__), "assets", "haarcascade_frontalface_default.xml"
@@ -91,6 +97,7 @@ class VirtualWebcam:
             if os.path.exists(classifier_path)
             else None
         )
+        self.show_guides = False
 
     def _send_to_virtual_webcam(self, frame):
         try:
@@ -146,17 +153,15 @@ class VirtualWebcam:
                 break
 
     def _render_image(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        cv2.resize(frame, (self.width, self.height))
+        cv2.resize(frame, self.resolution)
+        if self.face_tracking and self._classifier:
+            self._detect_face(frame)
+        if self.face_tracking and self.current_face:
+            frame = self._crop_face(frame)
         self._compute_mask(frame)
         background_frame = self._apply_blur(frame)
         background_frame = self._apply_sepia(background_frame)
-        if self.face_tracking:
-            if self._classifier:
-                self._detect_face(frame)
         cv2.blendLinear(frame, background_frame, self.mask, 1 - self.mask, dst=frame)
-        if self.face_tracking:
-            if self.current_face:
-                frame = self._crop_face(frame)
         return frame
 
     def _compute_mask(self, frame: NDArray[np.uint8]) -> None:
@@ -195,17 +200,54 @@ class VirtualWebcam:
             # Propably a false positive
             return
 
+        if self.show_guides:
+            self._draw_guides(frame, face)
+
         d = face.center - self.current_face.center
         is_too_far = d > self.current_face.h * self.face_tracking_threshold
         if is_too_far or is_too_small:
             self.current_face = self._enlarge_face_rect(face)
 
+    def _draw_guides(self, frame: NDArray[np.uint8], face: Rectangle):
+        crosshair_size = 10
+        cv2.rectangle(
+            frame,
+            (face.x, face.y),
+            (face.x + face.w, face.y + face.h),
+            (0, 255, 0),
+            2,
+        )
+        cv2.line(
+            frame,
+            (
+                face.x + face.w // 2 - crosshair_size // 2,
+                face.y + face.h // 2,
+            ),
+            (
+                face.x + face.w // 2 + crosshair_size // 2,
+                face.y + face.h // 2,
+            ),
+            (0, 255, 0),
+            2,
+        )
+        cv2.line(
+            frame,
+            (
+                face.x + face.w // 2,
+                face.y + face.h // 2 - crosshair_size // 2,
+            ),
+            (
+                face.x + face.w // 2,
+                face.y + face.h // 2 + crosshair_size // 2,
+            ),
+            (0, 255, 0),
+            2,
+        )
+
     def _enlarge_face_rect(self, rect: Rectangle) -> Rectangle:
-        h = int(2 * rect.h)
-        w = int(h * (self.width / self.height))
-        x = int(rect.x - (w - rect.w) / 2)
-        y = int(rect.y - (h - rect.h) / 2)
-        return Rectangle(x, y, w, h)
+        from frame import OneThird
+
+        return OneThird(rect, self.resolution).frame()
 
     def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         if self.current_face is None:
@@ -224,7 +266,6 @@ class VirtualWebcam:
                     for c, t in zip(self.current_face, self.next_face)
                 )
             )
-
         return self._crop_and_resize(frame, rect_to_crop)
 
     def _crop_and_resize(
@@ -232,8 +273,11 @@ class VirtualWebcam:
     ) -> NDArray[np.uint8]:
         if rect.h == 0 or rect.w == 0:
             return frame
-        frame = frame[rect.y : rect.y + rect.h, rect.x : rect.x + rect.w]
-        return cv2.resize(frame, (self.width, self.height))
+        try:
+            frame = frame[rect.y : rect.y + rect.h, rect.x : rect.x + rect.w]
+            return cv2.resize(frame, self.resolution)
+        except Exception:
+            return frame
 
     def _apply_blur(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
         return cv2.GaussianBlur(
@@ -302,3 +346,8 @@ class Rectangle(NamedTuple):
     @property
     def center(self) -> Point:
         return Point(self.x + self.w // 2, self.y + self.h // 2)
+
+
+class Resolution(NamedTuple):
+    width: int
+    height: int
