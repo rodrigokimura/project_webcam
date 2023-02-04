@@ -15,7 +15,7 @@ class BaseApp(ABC):
 
 class CLIApp(BaseApp):
     def run(self):
-        cam = VirtualWebcam()
+        cam = VirtualWebcam(False)
         signal.signal(signal.SIGINT, lambda *args, **kwargs: cam.toggle())
         signal.signal(signal.SIGQUIT, lambda *args, **kwargs: sys.exit(0))
         cam.start()
@@ -154,7 +154,7 @@ class GUIApp(BaseApp):
 
     def _set_icon(self):
         img = Image("photo", file="src/assets/icon.png")
-        self.root.tk.call("wm", "iconphoto", self.root._w, img)
+        self.root.tk.call("wm", "iconphoto", self.root._w, img)  # type: ignore
 
 
 if __name__ == "__main__":

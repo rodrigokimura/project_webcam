@@ -1,16 +1,18 @@
 import os
 import time
+from functools import reduce
+from operator import or_
 from threading import Event
+from typing import Optional
 
 import cv2
 import numpy as np
-from inotify_simple import INotify, flags
-from numpy._typing import NDArray
+from inotify_simple import INotify, flags, masks
 from pyfakewebcam import FakeWebcam
 
 from frame import OneThird
 from image_processors import Blend, Blur, Resize, SelfieSegmentation, Sepia
-from models import Rectangle, Resolution
+from models import Frame, Rectangle, Resolution
 from utils import LoopCounter
 
 
@@ -22,7 +24,7 @@ class Webcam:
         self._prepare()
 
     def _prepare(self):
-        self._vc = cv2.VideoCapture(self._path, cv2.CAP_V4L2)
+        self._vc: cv2.VideoCapture = cv2.VideoCapture(self._path, cv2.CAP_V4L2)
         self._vc.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self._vc.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._vc.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
@@ -66,7 +68,7 @@ class VirtualWebcam:
         self._frame_counter_for_mask = LoopCounter(10)
         self._frame_counter_for_face = LoopCounter(30)
 
-        self.mask = None
+        self.mask: Optional[Frame] = None
         self.mask_engine = SelfieSegmentation()
         self.face_tracking = face_tracking
         self.face_tracking_threshold = 0.1
@@ -84,11 +86,7 @@ class VirtualWebcam:
         classifier_path = os.path.join(
             os.path.dirname(__file__), "assets", "haarcascade_frontalface_default.xml"
         )
-        self._classifier = (
-            cv2.CascadeClassifier(classifier_path)
-            if os.path.exists(classifier_path)
-            else None
-        )
+        self._classifier = cv2.CascadeClassifier(classifier_path)
         self.show_guides = False
 
     def _send_to_virtual_webcam(self, frame):
@@ -117,17 +115,28 @@ class VirtualWebcam:
             self._send_to_virtual_webcam(frame)
 
     def stop(self):
+        self.monitor.close()
         self.stop_event.set()
 
     def _start_monitoring_webcam(self):
         self.monitor = INotify(nonblocking=True)
+        flags_to_monitor = (
+            flags.CREATE,
+            flags.OPEN,
+            flags.CLOSE_NOWRITE,
+            flags.CLOSE_WRITE,
+        )
         self.monitor.add_watch(
             self.virtual_webcam_path,
-            flags.CREATE | flags.OPEN | flags.CLOSE_NOWRITE | flags.CLOSE_WRITE,
+            reduce(or_, flags_to_monitor),
         )
 
     def _check_if_webcam_is_open(self):
-        for event in self.monitor.read(0):
+        try:
+            events = self.monitor.read(0)
+        except BlockingIOError:
+            return
+        for event in events:
             _flags = flags.from_mask(event.mask)
             if flags.CLOSE_NOWRITE in _flags or flags.CLOSE_WRITE in _flags:
                 self.running = False
@@ -138,7 +147,7 @@ class VirtualWebcam:
                 print("Detected webcam open")
                 break
 
-    def _render_image(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    def _render_image(self, frame: Frame) -> Frame:
         frame = Resize(self.resolution).process(frame)
         if self.face_tracking and self._classifier:
             self._detect_face(frame)
@@ -150,11 +159,11 @@ class VirtualWebcam:
         frame = Blend(self.mask, background_frame).process(frame)
         return frame
 
-    def _compute_mask(self, frame: NDArray[np.uint8]) -> None:
+    def _compute_mask(self, frame: Frame) -> None:
         if self._frame_counter_for_mask.limit_reached or self.mask is None:
             self.mask = self.mask_engine.process(frame)
 
-    def _detect_face(self, frame: NDArray[np.uint8]) -> None:
+    def _detect_face(self, frame: Frame) -> None:
         if (
             not self._frame_counter_for_face.initial_value
             and self.current_face is not None
@@ -185,7 +194,7 @@ class VirtualWebcam:
         if is_too_far or is_too_small:
             self.current_face = OneThird(face, self.resolution).frame()
 
-    def _draw_guides(self, frame: NDArray[np.uint8], face: Rectangle):
+    def _draw_guides(self, frame: Frame, face: Rectangle):
         crosshair_size = 10
         cv2.rectangle(
             frame,
@@ -221,9 +230,7 @@ class VirtualWebcam:
             2,
         )
 
-    def _crop_face(self, frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
-        if self.current_face is None:
-            return
+    def _crop_face(self, frame: Frame) -> Frame:
         rect_to_crop = self.current_face
 
         if self._frame_counter_for_face.limit_reached:
@@ -244,9 +251,7 @@ class VirtualWebcam:
             )
         return self._crop_and_resize(frame, rect_to_crop)
 
-    def _crop_and_resize(
-        self, frame: NDArray[np.uint8], rect: Rectangle
-    ) -> NDArray[np.uint8]:
+    def _crop_and_resize(self, frame: Frame, rect: Rectangle) -> Frame:
         if rect.h == 0 or rect.w == 0:
             return frame
         try:

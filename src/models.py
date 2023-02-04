@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+import numpy as np
+
+Frame = np.ndarray[int, np.dtype[np.uint8]]
+
 
 class Point(NamedTuple):
     x: int

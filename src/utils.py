@@ -30,3 +30,10 @@ class LoopCounter:
     @property
     def initial_value(self) -> bool:
         return self._counter == 0
+
+
+def is_webcam_open(source: str | int):
+    import cv2
+
+    cap = cv2.VideoCapture(source)
+    return cap is not None or cap.isOpened()
