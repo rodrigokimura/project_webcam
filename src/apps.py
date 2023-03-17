@@ -1,7 +1,6 @@
 import signal
 import sys
 from abc import ABC, abstractmethod
-from pathlib import Path
 from threading import Thread
 from tkinter import HORIZONTAL, Image, IntVar, Tk, ttk
 
@@ -9,6 +8,7 @@ from dotenv import load_dotenv
 from PIL import Image as PillowImage
 from pystray import Icon, Menu, MenuItem
 
+from utils import Lock
 from webcam import VirtualWebcam
 
 
@@ -32,6 +32,7 @@ load_dotenv()
 class GUIApp(BaseApp):
     def __init__(self) -> None:
         super().__init__()
+        self._lock = Lock("lock")
         self.window = Tk()
         self.window.title("Webcam")
         self.window.geometry("300x500")
@@ -60,16 +61,14 @@ class GUIApp(BaseApp):
         self.window.mainloop()
 
     def lock(self):
-        open("lock", "a").close()
+        self._lock.lock()
 
     def unlock(self):
-        Path("lock").unlink(missing_ok=True)
-        # os.remove("lock", missing_ok=True)
+        self._lock.unlock()
 
     @property
     def locked(self):
-        return Path("lock").exists()
-        # return os.path.exists("lock")
+        return self._lock.locked
 
     def _show_systray_icon(self):
         im = PillowImage.open("src/assets/icon.png")
