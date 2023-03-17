@@ -1,6 +1,7 @@
 import signal
 import sys
 from abc import ABC, abstractmethod
+from pathlib import Path
 from threading import Thread
 from tkinter import HORIZONTAL, Image, IntVar, Tk, ttk
 
@@ -42,15 +43,33 @@ class GUIApp(BaseApp):
         self.show_guides = IntVar()
 
         self.webcam = VirtualWebcam(face_tracking=False)
+
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
+        signal.signal(signal.SIGQUIT, lambda *args, **kwargs: self.exit())
+
         self._set_icon()
         self._build_layout()
 
     def run(self):
+        if self.locked:
+            return
+        self.lock()
         self._start_webcam()
         ttk.Style(self.window).theme_use("clam")
         self.hide()
         self.window.mainloop()
+
+    def lock(self):
+        open("lock", "a").close()
+
+    def unlock(self):
+        Path("lock").unlink(missing_ok=True)
+        # os.remove("lock", missing_ok=True)
+
+    @property
+    def locked(self):
+        return Path("lock").exists()
+        # return os.path.exists("lock")
 
     def _show_systray_icon(self):
         im = PillowImage.open("src/assets/icon.png")
@@ -215,6 +234,7 @@ class GUIApp(BaseApp):
         self._show_systray_icon()
 
     def exit(self):
+        self.unlock()
         self.webcam.stop()
         self.main_thread.join()
         self.window.destroy()
