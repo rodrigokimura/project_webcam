@@ -12,6 +12,7 @@ pygobject = "*"
 pystray = "*"
 python-dotenv = "*"
 pillow = "*"
+psutil = "*"
 
 [dev-packages]
 black = "*"

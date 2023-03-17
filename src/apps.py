@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from PIL import Image as PillowImage
 from pystray import Icon, Menu, MenuItem
 
-from utils import Lock
+from locker import Locker
 from webcam import VirtualWebcam
 
 
@@ -32,7 +32,7 @@ load_dotenv()
 class GUIApp(BaseApp):
     def __init__(self) -> None:
         super().__init__()
-        self._lock = Lock("lock")
+        self._lock = Locker("lock")
         self.window = Tk()
         self.window.title("Webcam")
         self.window.geometry("300x500")
