@@ -1,13 +1,10 @@
 import os
 import time
-from functools import reduce
-from operator import or_
 from threading import Event
 from typing import Optional
 
 import cv2
 import numpy as np
-from inotify_simple import INotify, flags, masks
 from pyfakewebcam import FakeWebcam
 
 from frame import OneThird
@@ -97,11 +94,7 @@ class VirtualWebcam:
 
     def start(self):
 
-        self._start_monitoring_webcam()
-
         while not self.stop_event.is_set():
-            self._check_if_webcam_is_open()
-
             if self.running:
                 frame = self.webcam.read()
                 self._frame_counter_for_mask.increment()
@@ -115,37 +108,7 @@ class VirtualWebcam:
             self._send_to_virtual_webcam(frame)
 
     def stop(self):
-        self.monitor.close()
         self.stop_event.set()
-
-    def _start_monitoring_webcam(self):
-        self.monitor = INotify(nonblocking=True)
-        flags_to_monitor = (
-            flags.CREATE,
-            flags.OPEN,
-            flags.CLOSE_NOWRITE,
-            flags.CLOSE_WRITE,
-        )
-        self.monitor.add_watch(
-            self.virtual_webcam_path,
-            reduce(or_, flags_to_monitor),
-        )
-
-    def _check_if_webcam_is_open(self):
-        try:
-            events = self.monitor.read(0)
-        except BlockingIOError:
-            return
-        for event in events:
-            _flags = flags.from_mask(event.mask)
-            if flags.CLOSE_NOWRITE in _flags or flags.CLOSE_WRITE in _flags:
-                self.running = False
-                print("Detected webcam close")
-                break
-            if flags.OPEN in _flags:
-                self.running = True
-                print("Detected webcam open")
-                break
 
     def _render_image(self, frame: Frame) -> Frame:
         frame = Resize(self.resolution).process(frame)
