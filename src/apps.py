@@ -77,6 +77,7 @@ class GUIApp(BaseApp):
             icon=im,
             menu=Menu(
                 MenuItem("Show", self.show),
+                Menu.SEPARATOR,
                 MenuItem(
                     "Toggle webcam",
                     self.webcam.toggle,
@@ -92,6 +93,7 @@ class GUIApp(BaseApp):
                     self.toggle_show_guides,
                     checked=lambda _: self.webcam.show_guides,
                 ),
+                Menu.SEPARATOR,
                 MenuItem("Exit", self.exit),
             ),
         )
