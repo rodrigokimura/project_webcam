@@ -18,6 +18,3 @@ psutil = "*"
 black = "*"
 isort = "*"
 pytest = "*"
-
-[requires]
-python_version = "3.10"
